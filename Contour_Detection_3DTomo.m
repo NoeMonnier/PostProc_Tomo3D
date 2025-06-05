@@ -111,7 +111,7 @@ List_TruncIm = dir([TruncDir '\*.tif']); % Gather all truncated images
 Name_TruncIm = sortrows(char(List_TruncIm.name));
 nbIm_Trunc = size(List_TruncIm,1); % Number of truncated images
 
-dy = diff(position_filtered); % First derivative of the mirror position, used to find when the rotating direction change
+dy = diff(angle_filtered); % First derivative of the mirror position, used to find when the rotating direction change
 
 if Sweep
     disp('### SEPARATION ###')
@@ -186,7 +186,7 @@ for nSweep = nbSweep_start:nbSweep
         List_SweepIm = dir([WorkDir '\*.tif']); % Gather all images in the sweep
         Name_SweepIm = sortrows(char(List_SweepIm.name));
         nbIm_Sweep = size(Name_SweepIm,1); 
-        SweepIm_pos = [];
+        SweepIm_coeff = [];
         
         for nIm=1:nbIm_Sweep
             
@@ -194,7 +194,7 @@ for nSweep = nbSweep_start:nbSweep
             button = questdlg('Flame ?','Flame selection');
             switch button
                 case 'Yes'
-                    SweepIm_pos = [SweepIm_pos position(str2double(Name_SweepIm(nIm,7:end-4))-nbIm_start)];
+                    SweepIm_coeff = [SweepIm_coeff; pos_coeff_a(str2double(Name_SweepIm(nIm,7:end-4))-nbIm_start) pos_coeff_b(str2double(Name_SweepIm(nIm,7:end-4))-nbIm_start)];
                 case 'No'
                     delete([WorkDir '\' Name_SweepIm(nIm,:)])
                 case 'Cancel'
@@ -203,7 +203,7 @@ for nSweep = nbSweep_start:nbSweep
     
         end
         close all
-        save([WorkDir '\Positions'],'SweepIm_pos') % Saving position of the images with flame
+        save([WorkDir '\Positions'],'SweepIm_coeff') % Saving position of the images with flame
 
         % Re evaluate the image list in the directory
         List_SweepIm = dir([WorkDir '\*.tif']); % Gather all images in the sweep
@@ -382,6 +382,7 @@ for nSweep = nbSweep_start:nbSweep
                 if max(BinIm.*(1-Mask_HIT),[],'all')==1
                     HIT = false; % If yes don't save and don't process aditionnal images
                     disp('Flame exited the HIT zone')
+                    nbSweep_end = nSweep;
                 else
                     imwrite(BinIm,strcat([WorkDir '\2.1_Binary\Binary_'],Name_SweepIm(nIm,7:end-4),'.tif'),'TIF'); % If no save the image and process the next one
                 end
@@ -396,6 +397,7 @@ for nSweep = nbSweep_start:nbSweep
     disp("### CONTOUR DETECTION ###")
     
     WorkDir = [SweepDir{nSweep} '\2.1_Binary'];
+    ContourDir = [SweepDir{nSweep} '\2.2_Contour'];
     List_BinIm = dir([WorkDir '\*.tif']); % Gather all binary images from the directory
     Name_BinIm = sortrows(char(List_BinIm.name)); % Name of all binary images
     nbIm_Bin = size(List_BinIm,1); % Number of images to process
@@ -467,11 +469,47 @@ for nSweep = nbSweep_start:nbSweep
         saveas(contour_plot,[SweepDir{nSweep} '\2.2_Contour\Image' Name_BinIm(nIm,7:end-4) '.tif']);
         close(contour_plot)
     
-        save([ContourDir '\Contour_' Name_BinIm(nIm,7:end-4)], 'contour','contour_filt','contour_filt_int','ScaleFilter','Magn','nbIm_start');
+        save([ContourDir '\Contour_' Name_BinIm(nIm,7:end-4)], 'contour','contour_filt','contour_filt_int');
 
     end
     disp('### CONTOUR DETECTION DONE ###')
     toc
+
+% V and P Matrix
+
+    V = zeros(sizey,nbIm_Bin,sizex); % Value matrix : 1 if flame 0 if no flame
+    P = zeros(sizey,nbIm_Bin,sizex,3); % Position matrix : store the XYZ position of each V points
+    
+    for nIm=1:nbIm_Bin
+        BinIm = imread([WorkDir '\' Name_BinIm(nIm,:)]); % Reading the binary image
+        for i = 1:sizey
+            for j = 1:sizex
+                V(i,nIm,j) = BinIm(i,j); % Store the slice in V matrix
+            end
+        end
+        x = ((1:sizex)-round(electrodestip_pos(1)))*Magn; % X coordinates of each point in the image [mm]
+        z = ((1:sizey)-round(electrodestip_pos(2)))*Magn; % Z coordinates
+        % Store the coordinates in P
+        for i=1:sizey
+            P(i,nIm,:,1) = x;
+        end
+
+        for i = 1:sizex
+            P(:,nIm,i,2) = SweepIm_coeff(nIm,1).*P(:,nIm,i,1) + SweepIm_coeff(nIm,2); % Compute the Y position during propagation through the sphere
+        end
+
+        for i=1:sizex
+            P(:,nIm,i,3) = z;
+        end
+        
+
+    end
+
+    save([SweepDir{nSweep} '\Flame_Matrix'], 'V', 'P')
+
 end
 
+save([Original_WorkDir '\Process_parameters'], 'nbIm_start', 'nbSweep', 'nbSweep_start', 'nbSweep_end', 'SweepDir');
+
 disp('### DONE ###')
+
