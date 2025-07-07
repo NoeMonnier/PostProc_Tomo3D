@@ -10,7 +10,7 @@ warning off
 %% WORKING DIRECTORY
 
 addpath('.\Functions') % adding computing functions directory to path
-WorkDir = uigetdir('C:\Users\noe.monnier\Documents\Turbulent analysis\Tomo3D\Première passe de tests\NH3_Air_423K_1bar\3000 rpm\tir_1'); % Working directory = directory where images are stored
+WorkDir = uigetdir('C:\Users\noe.monnier\Documents\Turbulent analysis\Tomo3D'); % Working directory = directory where images are stored
 Original_WorkDir = WorkDir; % Keep in memory the original working directory
 load([WorkDir '\Parameters']) % Load processing parameters
 
@@ -38,7 +38,7 @@ HIT = true; % True by default, control if a flame is within the HIT zone
 
 Trunc = false; % true = Truncate all images, true by default, put false if images have already been truncated
 Sweep = false; % true = move all images in the respective sweep folder, put false if images have already been moved
-nbIm_start = 11; % At which image the post proc start
+nbIm_start = 1; % At which image the post proc start
 nbSweep_start = 7; % First Sweep to be processed
 
 % Erosion parameters
@@ -75,26 +75,28 @@ if Trunc
     toc
 end
 
-LASER = exist([WorkDir '\Laser_Profile.mat'], 'file'); % Check if the laser intensity profile exists
-if LASER==0
-    disp('### LASER IMAGE FOLDER SELECTION ###')
-    LaserDir = uigetdir('C:\Users\noe.monnier\Documents\Turbulent analysis\Tomo3D\Première passe de tests\NH3_Air_423K_1bar\3000 rpm'); % Directory where the laser images are stored
-    List_LaserIm = dir([LaserDir '\*.tif']); 
-    Name_LaserIm = sortrows(char(List_LaserIm.name)); % Name of the different images
-    nbIm_Laser = size(List_LaserIm,1); % Number of laser image
-    laserProfile = 0; % Initialising varaibles
-    laserProfile_filt = 0;
-    for nIm = 1:nbIm_Laser
-        LaserIm = im2double(imread([LaserDir '\' Name_LaserIm(nIm,:)]));
-        laserProfile = laserProfile + mean(LaserIm,2);
-        laserProfile_filt = laserProfile_filt + filtfilt(ones(1,100),100,mean(LaserIm,2));
-    end
-    laserProfile = laserProfile./10;
-    laserProfile_filt = laserProfile_filt./10;
-    save([WorkDir '\Laser_Profile.mat'],'laserProfile', 'laserProfile_filt');
-else
-    load([WorkDir '\Laser_Profile']) % Load laser profile data
-end
+load([LaserDir '\Laser_Profile.mat'])
+
+% LASER = exist([WorkDir '\Laser_Profile.mat'], 'file'); % Check if the laser intensity profile exists
+% if LASER==0
+%     disp('### LASER IMAGE FOLDER SELECTION ###')
+%     LaserDir = uigetdir('C:\Users\noe.monnier\Documents\Turbulent analysis\Tomo3D\Première passe de tests\NH3_Air_423K_1bar\3000 rpm'); % Directory where the laser images are stored
+%     List_LaserIm = dir([LaserDir '\*.tif']); 
+%     Name_LaserIm = sortrows(char(List_LaserIm.name)); % Name of the different images
+%     nbIm_Laser = size(List_LaserIm,1); % Number of laser image
+%     laserProfile = 0; % Initialising varaibles
+%     laserProfile_filt = 0;
+%     for nIm = 1:nbIm_Laser
+%         LaserIm = im2double(imread([LaserDir '\' Name_LaserIm(nIm,:)]));
+%         laserProfile = laserProfile + mean(LaserIm,2);
+%         laserProfile_filt = laserProfile_filt + filtfilt(ones(1,100),100,mean(LaserIm,2));
+%     end
+%     laserProfile = laserProfile./10;
+%     laserProfile_filt = laserProfile_filt./10;
+%     save([WorkDir '\Laser_Profile.mat'],'laserProfile', 'laserProfile_filt');
+% else
+%     load([WorkDir '\Laser_Profile']) % Load laser profile data
+% end
 
 % Plot for visual check 
 figure(1)
@@ -105,11 +107,14 @@ hold off
 legend('Laser profile','Filtered laser profile')
 saveas(gcf, [WorkDir '\Laser_Profile.fig']);
 
+%% VARIABLES AND MEMORY ALLOCATION
+
+nIm_Global = NaN(ceil(nbIm_Laser/nbSweep),nbSweep); % Global counter of images
+
 %% SWEEP SEPARATION
 
 List_TruncIm = dir([TruncDir '\*.tif']); % Gather all truncated images
 Name_TruncIm = sortrows(char(List_TruncIm.name));
-nbIm_Trunc = size(List_TruncIm,1); % Number of truncated images
 
 dy = diff(angle_filtered); % First derivative of the mirror position, used to find when the rotating direction change
 
@@ -117,20 +122,24 @@ if Sweep
     disp('### SEPARATION ###')
     
     Sweep_counter = 1; % Count the total number of sweeps
+    Im_counter = 1; % Count the number of images in a sweep
     tic
-    for nIm = 1:nbIm_Trunc
+    for nIm = 1:nbIm_Laser
         disp(['Moving ' Name_TruncIm(nIm,:)]);   
-        if nIm == 1
+        if nIm == 1 % Moving the first image
             TruncIm = imread([TruncDir '\' Name_TruncIm(nIm,:)]);
             imwrite(TruncIm,[SweepDir{Sweep_counter} '\' Name_TruncIm(nIm,:)]);
-            %Im_counter = Im_counter + 1;
+            nIm_Global(1,1) = nIm; % Store the image number in a global matrix
+            Im_counter = Im_counter + 1;
         else
-            if dy(nIm)*dy(nIm-1)<0 % If the mirror change direction, fill an other sweep
-                Sweep_counter = Sweep_counter + 1; 
+            if dy(nIm)*dy(nIm-1)<0 % If the mirror change direction
+                Sweep_counter = Sweep_counter + 1; % Fill the next sweep directory
+                Im_counter = 1; % Reset the image counter after changing sweep directory
             end
             TruncIm = imread([TruncDir '\' Name_TruncIm(nIm,:)]);
             imwrite(TruncIm,[SweepDir{Sweep_counter} '\' Name_TruncIm(nIm,:)]);
-            %Im_counter = Im_counter + 1;
+            nIm_Global(Im_counter,Sweep_counter) = nIm; 
+            Im_counter = Im_counter + 1;
         end
     end
     disp('### SEPARATION DONE ###')
@@ -190,11 +199,11 @@ for nSweep = nbSweep_start:nbSweep
         
         for nIm=1:nbIm_Sweep
             
-            figure,imshow(imread([WorkDir '\' Name_SweepIm(nIm,:)]))
+            figure,imshow(imread([WorkDir '\' Name_SweepIm(nIm,:)])) % Manually check if the image contains a flame
             button = questdlg('Flame ?','Flame selection');
             switch button
                 case 'Yes'
-                    SweepIm_coeff = [SweepIm_coeff; pos_coeff_a(str2double(Name_SweepIm(nIm,7:end-4))-nbIm_start) pos_coeff_b(str2double(Name_SweepIm(nIm,7:end-4))-nbIm_start)];
+                    SweepIm_coeff = [SweepIm_coeff; pos_coeff_a(str2double(Name_SweepIm(nIm,7:end-4))-nbIm_start) pos_coeff_b(str2double(Name_SweepIm(nIm,7:end-4))-nbIm_start)]; % Store the physicak position of the laser sheet
                 case 'No'
                     delete([WorkDir '\' Name_SweepIm(nIm,:)])
                 case 'Cancel'
@@ -222,8 +231,8 @@ for nSweep = nbSweep_start:nbSweep
 
         % Normalisation to take account of the non homogeneity of the laser sheet
         for nColl = 1:sizey
-                SweepIm_first(:,nColl) = SweepIm_first(:,nColl)./(laserProfile/max(laserProfile)); 
-                SweepIm_last(:,nColl) = SweepIm_last(:,nColl)./(laserProfile/max(laserProfile)); 
+                SweepIm_first(:,nColl) = SweepIm_first(:,nColl)./(laserProfile_filt(:,nIm_Global(1,nSweep))/max(laserProfile_filt(:,nIm_Global(1,nSweep)))); 
+                SweepIm_last(:,nColl) = SweepIm_last(:,nColl)./(laserProfile_filt(:,nIm_Global(1,nSweep))/max(laserProfile_filt(:,nIm_Global(1,nSweep)))); 
         end
 
         SweepIm_first = imadjust(SweepIm_first);
@@ -336,7 +345,7 @@ for nSweep = nbSweep_start:nbSweep
                 BinIm = im2double(imread([WorkDir '\' Name_SweepIm(nIm,:)])); % Reading the image to process
                 % Normalisation to take account of the non homogeneity of the laser sheet
                 for nColl = 1:sizey
-                    BinIm(:,nColl) = BinIm(:,nColl)./(laserProfile/max(laserProfile)); 
+                    BinIm(:,nColl) = BinIm(:,nColl)./(laserProfile_filt(:,nIm_Global(1,nSweep))/max(laserProfile_filt(:,nIm_Global(1,nSweep)))); 
                 end
                 BinIm = imadjust(BinIm); % Increase the contrast of the image for easier binarization
                 BinIm = imbinarize(BinIm,BinThreshold); % Binarize the full image with the computed threshold
