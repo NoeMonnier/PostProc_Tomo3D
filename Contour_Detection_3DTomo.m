@@ -12,32 +12,19 @@ warning off
 addpath('.\Functions') % adding computing functions directory to path
 WorkDir = uigetdir('C:\Users\noe.monnier\Documents\Turbulent analysis\Tomo3D'); % Working directory = directory where images are stored
 Original_WorkDir = WorkDir; % Keep in memory the original working directory
-load([WorkDir '\Parameters']) % Load processing parameters
 
 TruncDir = [WorkDir '\1_Truncation']; % Directory for truncated images
-mkdir(TruncDir)
 SweepsDir = [WorkDir '\2_Sweeps']; % Directory for sweep separation
-mkdir(SweepsDir)
-SweepDir = cell(nbSweep,1);
-for i=1:nbSweep
-    SweepDir{i} = [SweepsDir '\Sweep_' num2str(i,'%03.0f')]; % Directories for individual sweeps
-    mkdir(SweepDir{i})
-    BinDir = [SweepDir{i} '\2.1_Binary']; % Directory for binary images
-    mkdir(BinDir)
-    ContourDir = [SweepDir{i} '\2.2_Contour']; % Directory for contour data
-    mkdir(ContourDir)
-end
 
 %% PARAMETERS
 
 load('C:\Users\noe.monnier\Documents\Turbulent analysis\Tomo3D\Première passe de tests\NH3_Air_423K_1bar\Positions.mat') % Load mirror and laser sheet position data
+load([WorkDir '\Parameters']) % Load processing parameters
 
 HIT_size = 40; % HIT zone size [mm]
 HIT_size_pxl = floor(HIT_size/Magn); % HIT zone size [pxl]
 HIT = true; % True by default, control if a flame is within the HIT zone
 
-Trunc = false; % true = Truncate all images, true by default, put false if images have already been truncated
-Sweep = false; % true = move all images in the respective sweep folder, put false if images have already been moved
 nbIm_start = 1; % At which image the post proc start
 nbSweep_start = 7; % First Sweep to be processed
 
@@ -61,10 +48,12 @@ end
 nbIm = size(List_RawIm,1); % Number of raw images
 Name_RawIm = sortrows(char(List_RawIm.name)); % Name of the different images
 
-if Trunc
+TRUNC = exist(TruncDir,'dir'); % Check if truncated image directory exists
+if TRUNC==0 % If directory doesn't exist
+    mkdir(TruncDir) % Create the directory
     disp('### TRUNCATION ###')
     tic 
-    for i = nbIm_start:nbIm
+    for i = nbIm_start:nbIm % Truncate all the image and save them in TruncDir
         disp(['Truncation ' Name_RawIm(i,:)]);
         RawIm = imread([WorkDir '\' Name_RawIm(i,:)]);
         BackgroundIm = imread([BackgroundDir '\' Name_RawIm(i,:)]);
@@ -118,8 +107,19 @@ Name_TruncIm = sortrows(char(List_TruncIm.name));
 
 dy = diff(angle_filtered); % First derivative of the mirror position, used to find when the rotating direction change
 
-if Sweep
+SWEEP = exist(SweepsDir,dir); % Check if Sweeps directory exists
+if SWEEP==0
     disp('### SEPARATION ###')
+    mkdir(SweepsDir) % Create diretory to store all sweeps data
+    SweepDir = cell(nbSweep,1); % Create directories for each sweep
+    for i=1:nbSweep
+        SweepDir{i} = [SweepsDir '\Sweep_' num2str(i,'%03.0f')]; % Directories for individual sweeps
+        mkdir(SweepDir{i})
+        BinDir = [SweepDir{i} '\2.1_Binary']; % Directory for binary images
+        mkdir(BinDir)
+        ContourDir = [SweepDir{i} '\2.2_Contour']; % Directory for contour data
+        mkdir(ContourDir)
+    end
     
     Sweep_counter = 1; % Count the total number of sweeps
     Im_counter = 1; % Count the number of images in a sweep
