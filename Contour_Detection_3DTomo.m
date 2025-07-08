@@ -18,8 +18,8 @@ SweepsDir = [WorkDir '\2_Sweeps']; % Directory for sweep separation
 
 %% PARAMETERS
 
-load('C:\Users\noe.monnier\Documents\Turbulent analysis\Tomo3D\Première passe de tests\NH3_Air_423K_1bar\Positions.mat') % Load mirror and laser sheet position data
 load([WorkDir '\Parameters']) % Load processing parameters
+load([PositionsDir '\Positions.mat']) % Load laser sheet and mirror positions data
 
 HIT_size = 40; % HIT zone size [mm]
 HIT_size_pxl = floor(HIT_size/Magn); % HIT zone size [pxl]
@@ -88,17 +88,13 @@ load([LaserDir '\Laser_Profile.mat'])
 % end
 
 % Plot for visual check 
-figure(1)
-hold on
-plot(laserProfile)
-plot(laserProfile_filt,'-r')
-hold off
-legend('Laser profile','Filtered laser profile')
-saveas(gcf, [WorkDir '\Laser_Profile.fig']);
-
-%% VARIABLES AND MEMORY ALLOCATION
-
-nIm_Global = NaN(ceil(nbIm_Laser/nbSweep),nbSweep); % Global counter of images
+% figure(1)
+% hold on
+% plot(laserProfile)
+% plot(laserProfile_filt,'-r')
+% hold off
+% legend('Laser profile','Filtered laser profile')
+% saveas(gcf, [WorkDir '\Laser_Profile.fig']);
 
 %% SWEEP SEPARATION
 
@@ -107,33 +103,35 @@ Name_TruncIm = sortrows(char(List_TruncIm.name));
 
 dy = diff(angle_filtered); % First derivative of the mirror position, used to find when the rotating direction change
 
-SWEEP = exist(SweepsDir,dir); % Check if Sweeps directory exists
+SWEEP = exist(SweepsDir,'dir'); % Check if Sweeps directory exists
 if SWEEP==0
     disp('### SEPARATION ###')
-    mkdir(SweepsDir) % Create diretory to store all sweeps data
-    SweepDir = cell(nbSweep,1); % Create directories for each sweep
-    for i=1:nbSweep
-        SweepDir{i} = [SweepsDir '\Sweep_' num2str(i,'%03.0f')]; % Directories for individual sweeps
-        mkdir(SweepDir{i})
-        BinDir = [SweepDir{i} '\2.1_Binary']; % Directory for binary images
-        mkdir(BinDir)
-        ContourDir = [SweepDir{i} '\2.2_Contour']; % Directory for contour data
-        mkdir(ContourDir)
-    end
-    
+    mkdir(SweepsDir) % Create diretory to store all sweeps data    
     Sweep_counter = 1; % Count the total number of sweeps
     Im_counter = 1; % Count the number of images in a sweep
     tic
     for nIm = 1:nbIm_Laser
         disp(['Moving ' Name_TruncIm(nIm,:)]);   
-        if nIm == 1 % Moving the first image
+        if nIm == 1 % Initialising the first sweep directory and moving the first image
+            SweepDir{1} = [SweepsDir '\Sweep_' num2str(Sweep_counter,'%03.0f')]; % Create the first sweep directory
+            mkdir(SweepDir{1})
+            BinDir = [SweepDir{1} '\2.1_Binary']; % Directory for binary images
+            mkdir(BinDir)
+            ContourDir = [SweepDir{1} '\2.2_Contour']; % Directory for contour data
+            mkdir(ContourDir)
             TruncIm = imread([TruncDir '\' Name_TruncIm(nIm,:)]);
             imwrite(TruncIm,[SweepDir{Sweep_counter} '\' Name_TruncIm(nIm,:)]);
             nIm_Global(1,1) = nIm; % Store the image number in a global matrix
             Im_counter = Im_counter + 1;
         else
             if dy(nIm)*dy(nIm-1)<0 % If the mirror change direction
-                Sweep_counter = Sweep_counter + 1; % Fill the next sweep directory
+                Sweep_counter = Sweep_counter + 1; % Create and fill the next sweep directory
+                SweepDir{Sweep_counter} = [SweepsDir '\Sweep_' num2str(Sweep_counter,'%03.0f')]; % Directories for individual sweeps
+                mkdir(SweepDir{Sweep_counter})
+                BinDir = [SweepDir{Sweep_counter} '\2.1_Binary']; % Directory for binary images
+                mkdir(BinDir)
+                ContourDir = [SweepDir{Sweep_counter} '\2.2_Contour']; % Directory for contour data
+                mkdir(ContourDir)
                 Im_counter = 1; % Reset the image counter after changing sweep directory
             end
             TruncIm = imread([TruncDir '\' Name_TruncIm(nIm,:)]);
@@ -144,6 +142,7 @@ if SWEEP==0
     end
     disp('### SEPARATION DONE ###')
     toc
+    nbSweep = Sweep_counter; % Total number of sweeps
 end
 %% MASKS
 
@@ -151,34 +150,39 @@ load electrodes_mask.mat % Loading default masks
 load lasersheet_mask.mat
 
 figure,imshow(imread([WorkDir '\' Name_RawIm(28,:)])) % Show a raw image where the laser sheet is centered
-h1 = drawpolygon(gca, 'Position', electrodes_pos); % Draw the mask for the electrodes
+h1 = drawpolygon(gca, 'Position', electrodes_posR); % Draw the mask for the right electrodes
 wait(h1);
-disp('#   ELECTRODES MASK OK     #')
+disp('#   RIGHT ELECTRODE MASK OK   #')
+h2 = drawpolygon(gca, 'Position', electrodes_posL); % Draw the mask for the left electrodes
+wait(h2);
+disp('#   LEFT ELECTRODE MASK OK    #')
 figure,imshow(imread([WorkDir '\' Name_RawIm(28,:)])) 
-h2 = drawpolygon(gca, 'Position', lasersheet_pos); % Draw the mask for the laser sheet
-wait(h2); 
+h3 = drawpolygon(gca, 'Position', lasersheet_pos); % Draw the mask for the laser sheet
+wait(h3); 
 disp('#   LASER SHEET MASK OK    #')
 figure,imshow(imread([WorkDir '\' Name_RawIm(28,:)]))
-h3 = drawpoint(gca, 'Position', [sizex/2 sizey/2]); % Select the tip of the electrodes
-wait(h3)
+h4 = drawpoint(gca, 'Position', [sizex/2 sizey/2]); % Select the tip of the electrodes
+wait(h4)
 disp('#    ELECTRODES TIP OK     #')
 
-Mask_electrodes = createMask(h1); % Create a binary mask for the electrodes
-Mask_lasersheet = createMask(h2); % Create a binary mask for the laser sheet
+Mask_electrode_R = createMask(h1); % Create a binary mask for the right electrode
+Mask_electrode_L = createMask(h2); % Create a binary mask for the left electrode
+Mask_lasersheet = createMask(h3); % Create a binary mask for the laser sheet
 
-electrodes_pos = h1.Position; % Extracting position
-lasersheet_pos = h2.Position;
-electrodestip_pos = h3.Position;
+electrodes_posR = h1.Position; % Extracting position
+electrodes_posL = h2.Position;
+lasersheet_pos = h3.Position;
+electrodestip_pos = h4.Position;
 
-save('electrodes_mask.mat','electrodes_pos') % Save the created masks
+save('electrodes_mask.mat','electrodes_posR','electrodes_posL') % Save the created masks
 save('lasersheet_mask.mat','lasersheet_pos')
 
 close all
 
 fig = figure('Visible','off');
 imshow(imread([WorkDir '\' Name_RawIm(end,:)]))
-h4 = drawcircle(gca,'Position',electrodestip_pos,'Radius',HIT_size_pxl); % Draw a circle corresponding to the HIT zone
-Mask_HIT = createMask(h4); % Create a binary mask for the HIT zone
+h5 = drawcircle(gca,'Position',electrodestip_pos,'Radius',HIT_size_pxl); % Draw a circle corresponding to the HIT zone
+Mask_HIT = createMask(h5); % Create a binary mask for the HIT zone
 
 close all
 
@@ -199,7 +203,7 @@ for nSweep = nbSweep_start:nbSweep
         
         for nIm=1:nbIm_Sweep
             
-            figure,imshow(imread([WorkDir '\' Name_SweepIm(nIm,:)])) % Manually check if the image contains a flame
+            figure,imshow(imadjust(imread([WorkDir '\' Name_SweepIm(nIm,:)]))) % Manually check if the image contains a flame
             button = questdlg('Flame ?','Flame selection');
             switch button
                 case 'Yes'
@@ -260,7 +264,8 @@ for nSweep = nbSweep_start:nbSweep
             %         end
             %     end
             % end
-            BinIm_first = BinIm_first.*iminv(Mask_electrodes); 
+            BinIm_first = BinIm_first.*iminv(Mask_electrode_R); 
+            BinIm_first = BinIm_first.*iminv(Mask_electrode_L);
             BinIm_first = imerode(BinIm_first,se); 
             BinIm_first = imdilate(BinIm_first,se);
             %BinIm_first = Fct_Struct_Max(BinIm_first); 
@@ -294,7 +299,8 @@ for nSweep = nbSweep_start:nbSweep
             %         end
             %     end
             % end
-            BinIm_last = BinIm_last.*iminv(Mask_electrodes); 
+            BinIm_last = BinIm_last.*iminv(Mask_electrode_R);
+            BinIm_last = BinIm_last.*iminv(Mask_electrode_L);
             BinIm_last = imerode(BinIm_last,se); 
             BinIm_last = imdilate(BinIm_last,se);
             %BinIm_last = Fct_Struct_Max(BinIm_last); 
@@ -363,11 +369,12 @@ for nSweep = nbSweep_start:nbSweep
                 %         end
                 %     end
                 % end
-                BinIm = BinIm.*iminv(Mask_electrodes); % Removing electrodes using the masks
+                BinIm = BinIm.*iminv(Mask_electrode_R); % Removing electrodes using the masks
+                BinIm = BinIm.*iminv(Mask_electrode_L);
     
                 % Erode and Dilate the image to fill the gaps and filter the binarisation noise
             
-                BinIm = imerode(BinIm,se); % Erosion and dilatation with mask se to remove binarisation noise
+                BinIm = imerode(BinIm,se); % Erosion and dilatation with structure se to remove binarisation noise
                 BinIm = imdilate(BinIm,se);
                 % BinIm = Fct_Struct_Max(BinIm); % Keeping the largest structure in the image
                 BinIm = medfilt2(BinIm, [smfilt smfilt]); % Median filter to remove the last binarisation noise
@@ -438,9 +445,16 @@ for nSweep = nbSweep_start:nbSweep
             end
         end
 
-        % Remove points in the electrode mask from the contour
+        % Remove points in the electrodes mask from the contour
         for contour_point = 1:size(x_cont,2)
-            [in, on] = inpolygon(x_cont(contour_point),y_cont(contour_point),electrodes_pos(:,1),abs(electrodes_pos(:,2)));
+            % Right electrode
+            [in, on] = inpolygon(x_cont(contour_point),y_cont(contour_point),electrodes_posR(:,1),abs(electrodes_posR(:,2)));
+            if in || on 
+                x_cont(contour_point) = NaN; % replacing values by NaN to keep the array size consistent
+                y_cont(contour_point) = NaN;
+            end
+            % Left electrode
+            [in, on] = inpolygon(x_cont(contour_point),y_cont(contour_point),electrodes_posL(:,1),abs(electrodes_posL(:,2)));
             if in || on 
                 x_cont(contour_point) = NaN; % replacing values by NaN to keep the array size consistent
                 y_cont(contour_point) = NaN;
