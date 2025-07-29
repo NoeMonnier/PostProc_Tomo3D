@@ -25,11 +25,9 @@ HIT_size = 40; % HIT zone size [mm]
 HIT_size_pxl = floor(HIT_size/Magn); % HIT zone size [pxl]
 HIT = true; % True by default, control if a flame is within the HIT zone
 
-nbIm_start = 1; % At which image the post proc start
-nbSweep_start = 7; % First Sweep to be processed
+nbSweep_start = 10; % First Sweep to be processed
 
 % Erosion parameters
-
 smfilt = 7; % Size of the median filter
 erosion_size = 2;
 se = strel('disk',erosion_size,6); % Erosion structure
@@ -53,12 +51,12 @@ if TRUNC==0 % If directory doesn't exist
     mkdir(TruncDir) % Create the directory
     disp('### TRUNCATION ###')
     tic 
-    for i = nbIm_start:nbIm % Truncate all the image and save them in TruncDir
+    for i = 1:nbIm % Truncate all the image and save them in TruncDir
         disp(['Truncation ' Name_RawIm(i,:)]);
         RawIm = imread([WorkDir '\' Name_RawIm(i,:)]);
         BackgroundIm = imread([BackgroundDir '\' Name_RawIm(i,:)]);
         TruncIm = (imsubtract(RawIm,BackgroundIm)); % Substracting the background 
-        imwrite(TruncIm,[TruncDir '\Trunc_' num2str(i,'%05.0f') '.tif']); % Saving the truncated image
+        imwrite(RawIm,[TruncDir '\Trunc_' num2str(i,'%05.0f') '.tif']); % Saving the truncated image
     end
     disp('### TRUNCATION DONE ###')
     toc
@@ -115,9 +113,13 @@ if SWEEP==0
         if nIm == 1 % Initialising the first sweep directory and moving the first image
             SweepDir{1} = [SweepsDir '\Sweep_' num2str(Sweep_counter,'%03.0f')]; % Create the first sweep directory
             mkdir(SweepDir{1})
-            BinDir = [SweepDir{1} '\2.1_Binary']; % Directory for binary images
+            CorrecDir = [SweepDir{1} '\2.1_Correc']; % Directory for laser sheet corrected images
+            mkdir(CorrecDir)
+            AdjustDir = [SweepDir{1} '\2.2_Adjust']; % Directory for contrast adjusted images
+            mkdir(AdjustDir)
+            BinDir = [SweepDir{1} '\2.3_Binary']; % Directory for binary images
             mkdir(BinDir)
-            ContourDir = [SweepDir{1} '\2.2_Contour']; % Directory for contour data
+            ContourDir = [SweepDir{1} '\2.4_Contour']; % Directory for contour data
             mkdir(ContourDir)
             TruncIm = imread([TruncDir '\' Name_TruncIm(nIm,:)]);
             imwrite(TruncIm,[SweepDir{Sweep_counter} '\' Name_TruncIm(nIm,:)]);
@@ -128,9 +130,13 @@ if SWEEP==0
                 Sweep_counter = Sweep_counter + 1; % Create and fill the next sweep directory
                 SweepDir{Sweep_counter} = [SweepsDir '\Sweep_' num2str(Sweep_counter,'%03.0f')]; % Directories for individual sweeps
                 mkdir(SweepDir{Sweep_counter})
-                BinDir = [SweepDir{Sweep_counter} '\2.1_Binary']; % Directory for binary images
+                CorrecDir = [SweepDir{Sweep_counter} '\2.1_Correc']; % Directory for laser sheet corrected images
+                mkdir(CorrecDir)
+                AdjustDir = [SweepDir{Sweep_counter} '\2.2_Adjust']; % Directory for contrast adjusted images
+                mkdir(AdjustDir)
+                BinDir = [SweepDir{Sweep_counter} '\2.3_Binary']; % Directory for binary images
                 mkdir(BinDir)
-                ContourDir = [SweepDir{Sweep_counter} '\2.2_Contour']; % Directory for contour data
+                ContourDir = [SweepDir{Sweep_counter} '\2.4_Contour']; % Directory for contour data
                 mkdir(ContourDir)
                 Im_counter = 1; % Reset the image counter after changing sweep directory
             end
@@ -207,7 +213,7 @@ for nSweep = nbSweep_start:nbSweep
             button = questdlg('Flame ?','Flame selection');
             switch button
                 case 'Yes'
-                    SweepIm_coeff = [SweepIm_coeff; pos_coeff_a(str2double(Name_SweepIm(nIm,7:end-4))-nbIm_start) pos_coeff_b(str2double(Name_SweepIm(nIm,7:end-4))-nbIm_start)]; % Store the physicak position of the laser sheet
+                    SweepIm_coeff = [SweepIm_coeff; pos_coeff_a(str2double(Name_SweepIm(nIm,7:end-4))) pos_coeff_b(str2double(Name_SweepIm(nIm,7:end-4)))]; % Store the physicak position of the laser sheet
                 case 'No'
                     delete([WorkDir '\' Name_SweepIm(nIm,:)])
                 case 'Cancel'
@@ -241,7 +247,7 @@ for nSweep = nbSweep_start:nbSweep
 
         SweepIm_first = imadjust(SweepIm_first);
         SweepIm_last = imadjust(SweepIm_last);
-        thresholdtemp = graythresh(SweepIm_first); % Temporary threshold used for the loop
+        thresholdtemp = graythresh(SweepIm_first(find(Mask_lasersheet==1))); % Temporary threshold used for the loop
         fprintf('Binary threshold = %0.03f', thresholdtemp); % Display the value of the temporary threshold
 
         while threshold_test
@@ -318,11 +324,125 @@ for nSweep = nbSweep_start:nbSweep
             BinIm_last = imfill(BinIm_last,'holes'); 
             BinIm_last = Fct_Struct_Max(BinIm_last); 
             BinIm_last = medfilt2(BinIm_last, [smfilt smfilt]); 
+            
+            % Contour detection for the first and last image to check if binarisation threshold is good
+            fig_cont_first = figure('Visible','off');
+            cont_first = imcontour(BinIm_first,1); % Contour detection
+            close(fig_cont_first)
+
+            fig_cont_last = figure('Visible','off');
+            cont_last = imcontour(BinIm_last,1); % Contour detection
+            close(fig_cont_last)
+
+            x_cont_first = cont_first(1,2:end); % Contour coordinates
+            y_cont_first = cont_first(2,2:end);
+
+            x_cont_last = cont_last(1,2:end); % Contour coordinates
+            y_cont_last = cont_last(2,2:end);
+
+            % Check if contour is closed
+            if x_cont_first(end)==x_cont_first(1) && y_cont_first(end) == y_cont_first(1)
+                if x_cont_first(1)== x_cont_first(end) % If contour extremities are aligned
+                    x_cont_first = [x_cont_first x_cont_first(1)]; % closing manually the contour
+                    y_cont_first = [y_cont_first y_cont_first(1)];
+                else
+                    slope = (y_cont_first(end)-y_cont_first(1))/(x_cont_first(end)-x_cont_first(1)); % Closing the contour using linear segment
+                    y_intersect = y_cont_first(1)-slope*x_cont_first(1);
+                    x_line = x_cont_first(1)+0.5:0.5:x_cont_first(end)-0.5;
+                    y_line = slope.*x_line + y_intersect;
+                    x_cont_first = [x_cont_first fliplr(x_line) x_cont_first(1)];
+                    y_cont_first = [y_cont_first fliplr(y_line) y_cont_first(1)];
+                end
+            end
+
+            if x_cont_last(end)==x_cont_last(1) && y_cont_last(end) == y_cont_last(1)
+                if x_cont_last(1)== x_cont_last(end) % If contour extremities are aligned
+                    x_cont_last = [x_cont_last x_cont_last(1)]; % closing manually the contour
+                    y_cont_last = [y_cont_last y_cont_last(1)];
+                else
+                    slope = (y_cont_last(end)-y_cont_last(1))/(x_cont_last(end)-x_cont_last(1)); % Closing the contour using linear segment
+                    y_intersect = y_cont_last(1)-slope*x_cont_last(1);
+                    x_line = x_cont_last(1)+0.5:0.5:x_cont_last(end)-0.5;
+                    y_line = slope.*x_line + y_intersect;
+                    x_cont_last = [x_cont_last fliplr(x_line) x_cont_last(1)];
+                    y_cont_last = [y_cont_last fliplr(y_line) y_cont_last(1)];
+                end
+            end
+
+            % Remove points in the electrodes mask from the contour
+            for contour_point = 1:size(x_cont_first,2)
+                % Right electrode
+                [in, on] = inpolygon(x_cont_first(contour_point),y_cont_first(contour_point),electrodes_posR(:,1),abs(electrodes_posR(:,2)));
+                if in || on 
+                    x_cont_first(contour_point) = NaN; % replacing values by NaN to keep the array size consistent
+                    y_cont_first(contour_point) = NaN;
+                end
+                % Left electrode
+                [in, on] = inpolygon(x_cont_first(contour_point),y_cont_first(contour_point),electrodes_posL(:,1),abs(electrodes_posL(:,2)));
+                if in || on 
+                    x_cont_first(contour_point) = NaN; % replacing values by NaN to keep the array size consistent
+                    y_cont_first(contour_point) = NaN;
+                end
+            end
+
+            % Extract all the non-NaN values from the contour coordinates
+            x_cont_first = x_cont_first(1,~isnan(x_cont_first(1,:)));
+            y_cont_first = y_cont_first(1,~isnan(y_cont_first(1,:)));
+
+            for contour_point = 1:size(x_cont_last,2)
+                % Right electrode
+                [in, on] = inpolygon(x_cont_last(contour_point),y_cont_last(contour_point),electrodes_posR(:,1),abs(electrodes_posR(:,2)));
+                if in || on 
+                    x_cont_last(contour_point) = NaN; % replacing values by NaN to keep the array size consistent
+                    y_cont_last(contour_point) = NaN;
+                end
+                % Left electrode
+                [in, on] = inpolygon(x_cont_last(contour_point),y_cont_last(contour_point),electrodes_posL(:,1),abs(electrodes_posL(:,2)));
+                if in || on 
+                    x_cont_last(contour_point) = NaN; % replacing values by NaN to keep the array size consistent
+                    y_cont_last(contour_point) = NaN;
+                end
+            end
+
+            % Extract all the non-NaN values from the contour coordinates
+            x_cont_last = x_cont_last(1,~isnan(x_cont_last(1,:)));
+            y_cont_last = y_cont_last(1,~isnan(y_cont_last(1,:)));
+
+            contour_first = x_cont_first -1i * y_cont_first; % Reconstructing the contour geometry
+            contour_last = x_cont_last -1i * y_cont_last;
+
+            % Contour filtering
+            contour_filt_first = Fct_Contour_Filter(contour_first, ScaleFilter, Magn);
+            contour_filt_last = Fct_Contour_Filter(contour_last, ScaleFilter, Magn);
+        
+            % Contour interpolation
+            % Compute the distance between two successive points 
+            % If interpolation is good the distance should be around 0.5 
+            % Else interpolate again
+            contour_filt_int_first = contour_filt_first;
+            contour_filt_int_last = contour_filt_last;
+
+            % while min(sqrt(diff(real(contour_filt_int)).^2+diff(imag(contour_filt_int)).^2))<0.9
+            while ((max(sqrt(diff(real(contour_filt_int_first)).^2+diff(imag(contour_filt_int_first)).^2))>0.55) && (min(sqrt(diff(real(contour_filt_int_first)).^2+diff(imag(contour_filt_int_first)).^2))<0.45))
+                contour_temp = contour_filt_int_first(:)';
+                contour_filt_int_first = Fct_ContourInterpSpline(contour_temp,1,1);
+            end
+
+            while ((max(sqrt(diff(real(contour_filt_int_last)).^2+diff(imag(contour_filt_int_last)).^2))>0.55) && (min(sqrt(diff(real(contour_filt_int_last)).^2+diff(imag(contour_filt_int_last)).^2))<0.45))
+                contour_temp = contour_filt_int_last(:)';
+                contour_filt_int_last = Fct_ContourInterpSpline(contour_temp,1,1);
+            end
+        
+            % Extract the filtered contour points coordinates
+            x_filt_int_first = real(contour_filt_int_first);
+            y_filt_int_first = abs(imag(contour_filt_int_first));
+            x_filt_int_last = real(contour_filt_int_last);
+            y_filt_int_last = abs(imag(contour_filt_int_last));
         
             figure(3)
-            subplot(221); imagesc(RawIm_first); colormap gray; title('First image : raw'); axis off;
+            subplot(221); imagesc(imadjust(RawIm_first)); colormap gray; title('First image : raw'); hold on; plot(x_filt_int_first,y_filt_int_first,'r-'); hold off; axis off
             subplot(222); imagesc(BinIm_first); title('First image : binarized'); axis off; 
-            subplot(223); imagesc(RawIm_last); title('Last image : raw'); axis off; 
+            subplot(223); imagesc(imadjust(RawIm_last)); colormap gray; title('Last image : raw'); hold on; plot(x_filt_int_last,y_filt_int_last,'r-'); hold off; axis off
             subplot(224); imagesc(BinIm_last); title('Last image : binarized'); axis off; 
             pause(3)
         
@@ -353,10 +473,12 @@ for nSweep = nbSweep_start:nbSweep
                 for nColl = 1:sizey
                     BinIm(:,nColl) = BinIm(:,nColl)./(laserProfile_filt(:,nIm_Global(1,nSweep))/max(laserProfile_filt(:,nIm_Global(1,nSweep)))); 
                 end
+                imwrite(BinIm,strcat([WorkDir '\2.1_Correc\Correc_'],Name_SweepIm(nIm,7:end-4),'.tif'),'TIF'); % save the image
                 BinIm = imadjust(BinIm); % Increase the contrast of the image for easier binarization
+                imwrite(BinIm,strcat([WorkDir '\2.2_Adjust\Adjust_'],Name_SweepIm(nIm,7:end-4),'.tif'),'TIF'); % If no save the image and process the next one
                 BinIm = imbinarize(BinIm,BinThreshold); % Binarize the full image with the computed threshold
                 BinIm = iminv(BinIm); % Returns the negative of the image
-                BinIm = BinIm.*Mask_lasersheet; % Sets pixel outside the lasersheet mask to black
+                % BinIm = BinIm.*Mask_lasersheet; % Sets pixel outside the lasersheet mask to black
                 % if continuous_flame
                     BinIm = Fct_Struct_Max(BinIm); % Keeping the largest structure in the image
                 % else
@@ -400,7 +522,7 @@ for nSweep = nbSweep_start:nbSweep
                     disp('Flame exited the HIT zone')
                     nbSweep_end = nSweep;
                 else
-                    imwrite(BinIm,strcat([WorkDir '\2.1_Binary\Binary_'],Name_SweepIm(nIm,7:end-4),'.tif'),'TIF'); % If no save the image and process the next one
+                    imwrite(BinIm,strcat([WorkDir '\2.3_Binary\Binary_'],Name_SweepIm(nIm,7:end-4),'.tif'),'TIF'); % If no save the image and process the next one
                 end
             end
         end
@@ -412,8 +534,8 @@ for nSweep = nbSweep_start:nbSweep
 
     disp("### CONTOUR DETECTION ###")
     
-    WorkDir = [SweepDir{nSweep} '\2.1_Binary'];
-    ContourDir = [SweepDir{nSweep} '\2.2_Contour'];
+    WorkDir = [SweepDir{nSweep} '\2.3_Binary'];
+    ContourDir = [SweepDir{nSweep} '\2.4_Contour'];
     List_BinIm = dir([WorkDir '\*.tif']); % Gather all binary images from the directory
     Name_BinIm = sortrows(char(List_BinIm.name)); % Name of all binary images
     nbIm_Bin = size(List_BinIm,1); % Number of images to process
@@ -489,7 +611,7 @@ for nSweep = nbSweep_start:nbSweep
         RawIm = imread([Original_WorkDir '\tir' Name_BinIm(nIm,8:end-4) '.TIF']);
         contour_plot = figure('Visible','off');
         imagesc(RawIm); axis equal; title(['Image n°' Name_BinIm(nIm,7:end-4)]); colormap gray; hold on; plot(x_filt_int,y_filt_int,'r-');
-        saveas(contour_plot,[SweepDir{nSweep} '\2.2_Contour\Image' Name_BinIm(nIm,7:end-4) '.tif']);
+        saveas(contour_plot,[SweepDir{nSweep} '\2.4_Contour\Image' Name_BinIm(nIm,7:end-4) '.tif']);
         close(contour_plot)
     
         save([ContourDir '\Contour_' Name_BinIm(nIm,7:end-4)], 'contour','contour_filt','contour_filt_int');
@@ -532,7 +654,7 @@ for nSweep = nbSweep_start:nbSweep
 
 end
 
-save([Original_WorkDir '\Process_parameters'], 'nbIm_start', 'nbSweep', 'nbSweep_start', 'nbSweep_end', 'SweepDir');
+save([Original_WorkDir '\Process_parameters'], 'nbSweep', 'nbSweep_start', 'nbSweep_end', 'SweepDir');
 
 disp('### DONE ###')
 
